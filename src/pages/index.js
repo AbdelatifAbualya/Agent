@@ -7,6 +7,7 @@ export default function Home() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [mode, setMode] = useState('auto'); // 'auto', 'search', or 'direct'
   const messagesEndRef = useRef(null);
 
   // Automatically scroll to the bottom of the chat
@@ -22,8 +23,16 @@ export default function Home() {
     e.preventDefault();
     if (!input.trim()) return;
 
+    // Format input based on selected mode
+    let processedInput = input;
+    if (mode === 'search') {
+      processedInput = `/search ${input}`;
+    } else if (mode === 'direct') {
+      processedInput = `/ask ${input}`;
+    }
+
     // Add user message to chat
-    const userMessage = { role: 'user', content: input };
+    const userMessage = { role: 'user', content: input, mode };
     setMessages((prevMessages) => [...prevMessages, userMessage]);
     setInput('');
     setIsLoading(true);
@@ -35,7 +44,7 @@ export default function Home() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ message: input }),
+        body: JSON.stringify({ message: processedInput }),
       });
 
       if (!response.ok) {
@@ -48,7 +57,8 @@ export default function Home() {
       const assistantMessage = { 
         role: 'assistant', 
         content: data.response,
-        context: data.context  // Store retrieved context for potential display
+        context: data.context,
+        searchMode: data.searchMode
       };
       
       setMessages((prevMessages) => [...prevMessages, assistantMessage]);
@@ -81,10 +91,44 @@ export default function Home() {
         </h1>
         
         <div className={styles.chatContainer}>
+          <div className={styles.controls}>
+            <div className={styles.modeSelector}>
+              <label className={styles.modeLabel}>Mode:</label>
+              <div className={styles.modeButtons}>
+                <button 
+                  className={`${styles.modeButton} ${mode === 'auto' ? styles.activeMode : ''}`}
+                  onClick={() => setMode('auto')}
+                  type="button"
+                >
+                  Auto
+                </button>
+                <button 
+                  className={`${styles.modeButton} ${mode === 'search' ? styles.activeMode : ''}`}
+                  onClick={() => setMode('search')}
+                  type="button"
+                >
+                  Search
+                </button>
+                <button 
+                  className={`${styles.modeButton} ${mode === 'direct' ? styles.activeMode : ''}`}
+                  onClick={() => setMode('direct')}
+                  type="button"
+                >
+                  Direct
+                </button>
+              </div>
+            </div>
+          </div>
+          
           <div className={styles.messagesContainer}>
             {messages.length === 0 ? (
               <div className={styles.emptyState}>
-                Ask me anything! I'll use relevant documents to help answer your questions.
+                <p>Ask me anything!</p>
+                <p className={styles.modeDescription}>
+                  {mode === 'auto' && "I'll automatically use relevant documents when helpful."}
+                  {mode === 'search' && "I'll search my documents for information to answer your question."}
+                  {mode === 'direct' && "I'll answer directly without searching documents."}
+                </p>
               </div>
             ) : (
               messages.map((message, index) => (
@@ -94,6 +138,15 @@ export default function Home() {
                     message.role === 'user' ? styles.userMessage : styles.assistantMessage
                   }`}
                 >
+                  {message.role === 'user' && message.mode && (
+                    <div className={styles.messageMode}>
+                      {message.mode === 'search' ? 'Search' : 
+                       message.mode === 'direct' ? 'Direct' : 'Auto'}
+                    </div>
+                  )}
+                  {message.role === 'assistant' && message.searchMode && (
+                    <div className={styles.messageMode}>Used document search</div>
+                  )}
                   <div className={styles.messageContent}>
                     {message.content}
                   </div>
@@ -115,7 +168,7 @@ export default function Home() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Type your message..."
+              placeholder={`Type your message... (${mode} mode)`}
               className={styles.input}
               disabled={isLoading}
             />
