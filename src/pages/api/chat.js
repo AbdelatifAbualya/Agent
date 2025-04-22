@@ -1,6 +1,8 @@
-// src/pages/api/chat.js
+// src/pages/api/direct-chat.js
+// This is a simplified version that bypasses Abacus.ai for testing
 export default async function handler(req, res) {
-  // Only allow POST requests
+  console.log("Direct chat API route called");
+  
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -12,36 +14,14 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    // 1. Get relevant documents from Abacus.AI
-    const abacusResponse = await fetch('https://api.abacus.ai/api/v0/lookup_matches', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.ABACUS_DEPLOYMENT_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        deployment_id: process.env.ABACUS_DEPLOYMENT_ID,
-        data: message,
-      }),
-    });
-
-    if (!abacusResponse.ok) {
-      const errorData = await abacusResponse.json();
-      console.error('Abacus API error:', errorData);
-      return res.status(abacusResponse.status).json({ 
-        error: 'Error fetching from Abacus API',
-        details: errorData
-      });
+    if (!process.env.FIREWORK_API_KEY) {
+      console.error("FIREWORK_API_KEY is not set");
+      return res.status(500).json({ error: 'Missing Firework API key' });
     }
 
-    const abacusData = await abacusResponse.json();
+    console.log("Sending direct request to Firework.ai...");
     
-    // Extract relevant documents
-    const relevantDocs = abacusData.matches || [];
-    const context = relevantDocs.map(doc => doc.text).join('\n\n');
-
-    // 2. Use Firework.ai's DeepSeek to generate response
-    const fireworkResponse = await fetch('https://api.fireworks.ai/inference/v1/chat/completions', {
+    const response = await fetch('https://api.fireworks.ai/inference/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${process.env.FIREWORK_API_KEY}`,
@@ -58,35 +38,32 @@ export default async function handler(req, res) {
         messages: [
           {
             role: 'system',
-            content: 'You are a helpful assistant. Use the provided context to answer questions accurately. If the information is not in the context, state that you don\'t have that information.'
+            content: 'You are a helpful assistant.'
           },
           {
             role: 'user',
-            content: context ? `Context:\n${context}\n\nQuestion: ${message}` : message
+            content: message
           }
         ]
       }),
     });
 
-    if (!fireworkResponse.ok) {
-      const errorData = await fireworkResponse.json();
-      console.error('Firework API error:', errorData);
-      return res.status(fireworkResponse.status).json({ 
-        error: 'Error fetching from Firework API',
-        details: errorData
+    if (!response.ok) {
+      console.error("Firework API error:", response.status);
+      return res.status(response.status).json({ 
+        error: 'Error from Firework API',
+        status: response.status
       });
     }
 
-    const fireworkData = await fireworkResponse.json();
-    const answer = fireworkData.choices[0].message.content;
+    const data = await response.json();
+    const answer = data.choices[0].message.content;
 
-    // Return the final response
     res.status(200).json({ 
-      response: answer,
-      context: context ? relevantDocs : null
+      response: answer
     });
   } catch (error) {
-    console.error('Error processing request:', error);
+    console.error('Error in direct chat API:', error);
     res.status(500).json({ error: 'Internal server error', message: error.message });
   }
 }
